@@ -4,7 +4,14 @@
 """
 
 import streamlit as st
-from prompt_templates import PROMPT_TEMPLATES, generate_prompt, get_category_suggestions
+from prompt_templates import (
+    PROMPT_TEMPLATES, 
+    generate_prompt, 
+    get_category_titles,
+    get_consultation_by_title,
+    get_background_by_consultation,
+    get_attitudes
+)
 
 # ページ設定
 st.set_page_config(
@@ -82,6 +89,10 @@ if 'generated_prompt' not in st.session_state:
     st.session_state.generated_prompt = ""
 if 'copy_success' not in st.session_state:
     st.session_state.copy_success = False
+if 'custom_title' not in st.session_state:
+    st.session_state.custom_title = None
+if 'custom_consultation' not in st.session_state:
+    st.session_state.custom_consultation = None
 
 # ヘッダー
 st.markdown('<div class="main-title">👥 労務相談ロールプレー訓練システム</div>', unsafe_allow_html=True)
@@ -152,7 +163,7 @@ with tab1:
         with col1:
             # Streamlitのネイティブコピー機能を使用
             st.code(st.session_state.generated_prompt, language=None)
-            st.info("上のテキストを選択してコピーしてください(Ctrl+C / Cmd+C)")
+            st.info("💡 コピー方法: Ctrl+A (すべて選択) → Ctrl+C (コピー) → AIチャットで Ctrl+V (貼り付け)")
         
         with col2:
             if st.button("🗑️ クリア", use_container_width=True):
@@ -164,136 +175,102 @@ with tab1:
 # タブ2: カスタム作成
 with tab2:
     st.markdown("### オリジナルのシナリオを作成")
-    st.markdown("独自の労務相談シナリオを作成できます。すべての項目を入力してプロンプトを生成してください。")
+    st.markdown("カテゴリーを選択すると、関連する選択肢が順番に表示されます。")
     
-    # カテゴリー選択（フォームの外で）
+    # ステップ1: カテゴリー選択
+    st.markdown("#### ステップ1: カテゴリーを選択")
     custom_category = st.selectbox(
-        "カテゴリーを選択してください（選択すると入力候補が表示されます）",
+        "カテゴリー",
         ["選択してください", "メンタルヘルス", "労働時間", "ハラスメント", "育児・介護", 
          "退職・解雇", "賃金", "人事異動", "採用・試用期間", 
          "職場環境", "休暇・休業", "安全衛生", "その他"],
         key="category_selector"
     )
     
-    # カテゴリーに応じた提案を取得
     if custom_category != "選択してください":
-        suggestions = get_category_suggestions(custom_category)
-        st.info(f"💡 {custom_category}カテゴリーの入力例が表示されます。参考にしてください。")
-    else:
-        suggestions = {
-            'titles': [],
-            'consultations': [],
-            'backgrounds': [],
-            'attitudes': []
-        }
-    
-    with st.form("custom_prompt_form"):
-        col1, col2 = st.columns(2)
+        st.success(f"✅ カテゴリー「{custom_category}」を選択しました")
         
-        with col1:
-            # タイトル入力（候補から選択または手入力）
-            if suggestions['titles']:
-                title_option = st.radio(
-                    "シナリオタイトル",
-                    ["候補から選択", "独自に入力"],
-                    horizontal=True
-                )
-                if title_option == "候補から選択":
-                    custom_title = st.selectbox("タイトルを選択", suggestions['titles'])
-                else:
-                    custom_title = st.text_input("タイトルを入力", placeholder="例: 突然の退職申し出への対応")
-            else:
-                custom_title = st.text_input("シナリオタイトル", placeholder="例: 突然の退職申し出への対応")
+        # ステップ2: タイトル選択
+        st.markdown("#### ステップ2: シナリオタイトルを選択")
+        title_options = get_category_titles(custom_category)
         
-        with col2:
-            # 相談者の態度（候補から選択または手入力）
-            if suggestions['attitudes']:
-                attitude_option = st.radio(
-                    "相談者の態度",
-                    ["候補から選択", "独自に入力"],
-                    horizontal=True
-                )
-                if attitude_option == "候補から選択":
-                    custom_attitude = st.selectbox("態度を選択", suggestions['attitudes'])
-                else:
-                    custom_attitude = st.text_input("態度を入力", 
-                                                   placeholder="例: 不安が強く、涙ぐむこともあるが、具体的な事実は話せる")
-            else:
-                custom_attitude = st.text_input("相談者の態度", 
-                                               placeholder="例: 不安が強く、涙ぐむこともあるが、具体的な事実は話せる")
-        
-        # 相談内容（候補から選択または手入力）
-        if suggestions['consultations']:
-            consultation_option = st.radio(
-                "相談内容",
-                ["候補から選択", "独自に入力"],
-                horizontal=True
+        if title_options:
+            custom_title = st.selectbox(
+                "タイトル",
+                ["選択してください"] + title_options,
+                key="title_selector"
             )
-            if consultation_option == "候補から選択":
-                custom_consultation = st.selectbox("相談内容を選択", suggestions['consultations'])
-            else:
-                custom_consultation = st.text_area("相談内容を入力", height=100,
-                                                  placeholder="例: メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。")
-        else:
-            custom_consultation = st.text_area("相談内容", height=100,
-                                              placeholder="例: メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。")
-        
-        # 背景情報（候補から選択または手入力）
-        if suggestions['backgrounds']:
-            background_option = st.radio(
-                "背景情報",
-                ["候補から選択", "独自に入力"],
-                horizontal=True
-            )
-            if background_option == "候補から選択":
-                custom_background = st.selectbox("背景を選択", suggestions['backgrounds'])
-            else:
-                custom_background = st.text_area("背景情報を入力", height=100,
-                                                placeholder="例: 二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。")
-        else:
-            custom_background = st.text_area("背景情報", height=100,
-                                            placeholder="例: 二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。")
-        
-        submit_button = st.form_submit_button("プロンプトを生成", use_container_width=True)
-        
-        if submit_button:
-            # バリデーション
-            errors = []
-            if custom_category == "選択してください":
-                errors.append("カテゴリーを選択してください。")
-            if not custom_consultation:
-                errors.append("相談内容を入力してください。")
-            if not custom_background:
-                errors.append("背景情報を入力してください。")
-            if not custom_attitude:
-                errors.append("相談者の態度を入力してください。")
             
-            if errors:
-                for error in errors:
-                    st.error(error)
-            else:
-                custom_template = {
-                    'title': custom_title or "カスタムシナリオ",
-                    'category': custom_category,
-                    'consultation': custom_consultation,
-                    'background': custom_background,
-                    'attitude': custom_attitude
-                }
-                st.session_state.selected_template = custom_template
-                st.session_state.generated_prompt = generate_prompt(custom_template)
-                st.session_state.copy_success = False
+            if custom_title != "選択してください":
+                st.success(f"✅ タイトル「{custom_title}」を選択しました")
                 
-                # 生成されたプロンプトの文字数チェック
-                prompt_char_count = len(st.session_state.generated_prompt)
-                if prompt_char_count > 1000:
-                    st.warning(f"⚠️ 生成されたプロンプトが{prompt_char_count}文字です。1,000文字を超えていますが、生成しました。下で確認してください。")
-                else:
-                    st.success("✅ プロンプトを生成しました!下にスクロールして確認してください。")
+                # ステップ3: 相談内容選択
+                st.markdown("#### ステップ3: 相談内容を選択")
+                consultation_options = get_consultation_by_title(custom_category, custom_title)
+                
+                if consultation_options:
+                    custom_consultation = st.selectbox(
+                        "相談内容",
+                        ["選択してください"] + consultation_options,
+                        key="consultation_selector"
+                    )
+                    
+                    if custom_consultation != "選択してください":
+                        st.success(f"✅ 相談内容を選択しました")
+                        
+                        # ステップ4: 背景選択
+                        st.markdown("#### ステップ4: 背景情報を選択")
+                        background_options = get_background_by_consultation(custom_category, custom_title)
+                        
+                        if background_options:
+                            custom_background = st.selectbox(
+                                "背景情報",
+                                ["選択してください"] + background_options,
+                                key="background_selector"
+                            )
+                            
+                            if custom_background != "選択してください":
+                                st.success(f"✅ 背景情報を選択しました")
+                                
+                                # ステップ5: 態度選択
+                                st.markdown("#### ステップ5: 相談者の態度を選択")
+                                attitude_options = get_attitudes()
+                                
+                                custom_attitude = st.selectbox(
+                                    "相談者の態度",
+                                    ["選択してください"] + attitude_options,
+                                    key="attitude_selector"
+                                )
+                                
+                                if custom_attitude != "選択してください":
+                                    st.success(f"✅ 相談者の態度を選択しました")
+                                    
+                                    # プロンプト生成ボタン
+                                    st.markdown("---")
+                                    if st.button("🎯 プロンプトを生成", type="primary", use_container_width=True):
+                                        custom_template = {
+                                            'title': custom_title,
+                                            'category': custom_category,
+                                            'consultation': custom_consultation,
+                                            'background': custom_background,
+                                            'attitude': custom_attitude
+                                        }
+                                        st.session_state.selected_template = custom_template
+                                        st.session_state.generated_prompt = generate_prompt(custom_template)
+                                        st.session_state.copy_success = False
+                                        
+                                        # 生成されたプロンプトの文字数チェック
+                                        prompt_char_count = len(st.session_state.generated_prompt)
+                                        if prompt_char_count > 1000:
+                                            st.warning(f"⚠️ 生成されたプロンプトが{prompt_char_count}文字です。1,000文字を超えています。")
+                                        else:
+                                            st.success("✅ プロンプトを生成しました！下にスクロールして確認してください。")
+                                        
+                                        st.rerun()
     
     # カスタムプロンプトの表示
     if st.session_state.generated_prompt and st.session_state.selected_template:
-        if st.session_state.selected_template.get('category') == custom_category or \
-           (custom_category == "選択してください" and 'category' in st.session_state.selected_template):
+        if st.session_state.selected_template.get('category') == custom_category:
             st.markdown("---")
             st.markdown("### 📝 生成されたプロンプト")
             
@@ -310,7 +287,7 @@ with tab2:
             with col1:
                 # Streamlitのネイティブコピー機能を使用
                 st.code(st.session_state.generated_prompt, language=None)
-                st.info("上のテキストを選択してコピーしてください(Ctrl+C / Cmd+C)")
+                st.info("💡 コピー方法: Ctrl+A (すべて選択) → Ctrl+C (コピー) → AIチャットで Ctrl+V (貼り付け)")
             
             with col2:
                 if st.button("🗑️ クリア", key="clear_custom", use_container_width=True):
