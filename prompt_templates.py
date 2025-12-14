@@ -123,25 +123,247 @@ def generate_prompt(template_data):
         attitude=template_data['attitude']
     )
 
-def get_category_suggestions(category):
-    """カテゴリーに基づいて入力候補を返す"""
-    # 該当カテゴリーのテンプレートを抽出
-    category_templates = [t for t in PROMPT_TEMPLATES if t['category'] == category]
-    
-    if not category_templates:
-        return {
-            'titles': [],
-            'consultations': [],
-            'backgrounds': [],
-            'attitudes': []
+# カテゴリー別の連動シナリオデータベース
+CATEGORY_SCENARIOS = {
+    "メンタルヘルス": [
+        {
+            "title": "メンタル不調からの復職相談",
+            "consultation": "メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。",
+            "background": "二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。"
+        },
+        {
+            "title": "うつ病診断後の勤務継続",
+            "consultation": "医師からうつ病と診断されましたが、仕事は続けたいです。配慮してもらえますか?",
+            "background": "本人の業務負荷が高く、症状悪化のリスクがある。産業医面談が必要。"
+        },
+        {
+            "title": "適応障害による休職申請",
+            "consultation": "職場のストレスで適応障害と診断されました。休職させてください。",
+            "background": "人間関係のトラブルが原因。休職前に環境調整の余地があるか検討が必要。"
         }
-    
-    # 各項目の候補をリストアップ
-    suggestions = {
-        'titles': [t['title'] for t in category_templates],
-        'consultations': [t['consultation'] for t in category_templates],
-        'backgrounds': [t['background'] for t in category_templates],
-        'attitudes': list(set([t['attitude'] for t in category_templates]))  # 重複を除去
-    }
-    
-    return suggestions
+    ],
+    "労働時間": [
+        {
+            "title": "長時間労働の常態化",
+            "consultation": "毎月80時間以上の残業が続いています。体調を崩しそうです。",
+            "background": "繁忙期が続いており、部署全体で長時間労働が常態化している。"
+        },
+        {
+            "title": "サービス残業の強要",
+            "consultation": "上司から残業申請せずに仕事を終わらせろと言われます。これって違法ですよね?",
+            "background": "予算削減で残業代を抑制する圧力がある。労働時間管理が不適切。"
+        },
+        {
+            "title": "休日出勤の代休未取得",
+            "consultation": "休日出勤が多いのに、代休が取れません。振替休日はいつ取れますか?",
+            "background": "業務繁忙で代休消化の機会がない。労働基準法違反の可能性。"
+        }
+    ],
+    "ハラスメント": [
+        {
+            "title": "上司からのパワハラ被害",
+            "consultation": "上司から人格否定の発言を繰り返し受けています。精神的に限界です。",
+            "background": "上司との関係が悪化。ハラスメントの事実確認と被害者保護が必要。"
+        },
+        {
+            "title": "セクシュアルハラスメントの訴え",
+            "consultation": "同僚から性的な発言や接触を受けて不快です。やめてほしいと伝えましたが続いています。",
+            "background": "被害申告があり、迅速な事実確認と加害者への指導が必要。"
+        },
+        {
+            "title": "マタニティハラスメント",
+            "consultation": "妊娠を報告したら、上司から迷惑だと言われました。これってマタハラですよね?",
+            "background": "妊娠を理由とした不利益取扱いの可能性。男女雇用機会均等法違反のリスク。"
+        }
+    ],
+    "育児・介護": [
+        {
+            "title": "育児休業からの復職希望",
+            "consultation": "育休から復職したいのですが、以前と同じ部署に戻れますか?",
+            "background": "本人の部署では時短勤務者の前例がなく、受け入れ体制が未整備。"
+        },
+        {
+            "title": "介護休暇の取得相談",
+            "consultation": "親の介護で突然休まなければならないことがあります。介護休暇は使えますか?",
+            "background": "介護休暇制度の周知が不十分。柔軟な勤務体制の検討が必要。"
+        },
+        {
+            "title": "時短勤務の延長希望",
+            "consultation": "子どもが3歳を過ぎましたが、時短勤務を続けたいです。認められますか?",
+            "background": "法定を超える時短勤務の要望。会社の制度と業務への影響を考慮。"
+        }
+    ],
+    "退職・解雇": [
+        {
+            "title": "退職勧奨への対応",
+            "consultation": "上司から退職を考えてほしいと言われました。自分から辞めるつもりはありません。",
+            "background": "業績悪化により人員削減を検討。整理解雇の要件充足が不明確。"
+        },
+        {
+            "title": "解雇予告の適法性",
+            "consultation": "突然、来週で解雇すると言われました。30日前に予告がないのは違法では?",
+            "background": "解雇予告手続きが不適切。解雇理由の正当性も疑義あり。"
+        },
+        {
+            "title": "整理解雇の選定基準",
+            "consultation": "リストラで私だけ解雇対象になりました。選定基準が不公平ではないですか?",
+            "background": "整理解雇の4要件を満たしているか確認が必要。人選の合理性に疑問。"
+        }
+    ],
+    "賃金": [
+        {
+            "title": "残業代の未払い",
+            "consultation": "残業代が支払われていません。タイムカードに記録があるのに。",
+            "background": "残業申請の事前承認制で、実労働時間との乖離がある。"
+        },
+        {
+            "title": "固定残業代の違法性",
+            "consultation": "みなし残業45時間と言われていますが、実際は80時間働いています。差額は?",
+            "background": "固定残業代制度の運用が不適切。超過分の支払い義務あり。"
+        },
+        {
+            "title": "賞与の不支給",
+            "consultation": "同僚は賞与をもらったのに、私だけ支給されませんでした。理由も教えてくれません。",
+            "background": "賞与査定基準が不明確。説明責任と公平性の観点から問題。"
+        }
+    ],
+    "人事異動": [
+        {
+            "title": "不本意な配置転換",
+            "consultation": "突然、希望しない部署への異動を命じられました。拒否できますか?",
+            "background": "本人の適性を考慮した異動だが、事前説明が不足。"
+        },
+        {
+            "title": "遠隔地への転勤命令",
+            "consultation": "介護中の親がいるのに、遠方への転勤を命じられました。断れませんか?",
+            "background": "業務上の必要性はあるが、本人の家庭事情への配慮が不足。"
+        },
+        {
+            "title": "降格人事の不当性",
+            "consultation": "管理職から一般職への降格を言い渡されました。納得できません。",
+            "background": "業績評価に基づく降格だが、手続きと理由説明が不十分。"
+        }
+    ],
+    "採用・試用期間": [
+        {
+            "title": "試用期間の本採用拒否",
+            "consultation": "試用期間終了時に本採用を見送ると言われました。不当解雇では?",
+            "background": "試用期間中の評価基準が不明確で、フィードバックも不十分。"
+        },
+        {
+            "title": "内定取消しの連絡",
+            "consultation": "入社1ヶ月前に内定取消しの連絡がありました。違法ではないですか?",
+            "background": "業績悪化を理由とするが、整理解雇の要件に準じた検討が必要。"
+        },
+        {
+            "title": "試用期間の延長通知",
+            "consultation": "試用期間をさらに3ヶ月延長すると言われました。認められるのですか?",
+            "background": "延長の合理的理由と事前合意の有無を確認する必要がある。"
+        }
+    ],
+    "職場環境": [
+        {
+            "title": "職場いじめの相談",
+            "consultation": "同僚から無視されたり、情報を教えてもらえません。配置転換を希望します。",
+            "background": "本人のコミュニケーションにも課題。チーム全体の関係改善が必要。"
+        },
+        {
+            "title": "喫煙環境への苦情",
+            "consultation": "職場の喫煙所の煙が流れてきて体調が悪くなります。改善してください。",
+            "background": "受動喫煙防止措置が不十分。安全配慮義務の観点から対応必要。"
+        },
+        {
+            "title": "ハラスメント目撃の報告",
+            "consultation": "同僚がパワハラを受けているのを見ました。会社に報告すべきでしょうか?",
+            "background": "目撃情報の取扱いと通報者保護の体制整備が必要。"
+        }
+    ],
+    "休暇・休業": [
+        {
+            "title": "有給休暇取得の拒否",
+            "consultation": "有給申請したら繁忙期だから認められないと言われました。権利では?",
+            "background": "繁忙期で人手不足。時季変更権の要件を満たすか検討が必要。"
+        },
+        {
+            "title": "病気休暇の取得制限",
+            "consultation": "病気で休みたいのに、有給を使えと言われます。病気休暇はないのですか?",
+            "background": "病気休暇制度が未整備。法定外の福利厚生として検討余地あり。"
+        },
+        {
+            "title": "産前産後休業の取得",
+            "consultation": "出産予定日の6週間前ですが、産休を取りたいと伝えたら嫌な顔をされました。",
+            "background": "産前産後休業は労働基準法上の権利。会社の対応に問題あり。"
+        }
+    ],
+    "安全衛生": [
+        {
+            "title": "健康診断の異常所見",
+            "consultation": "健康診断で異常が見つかり、産業医から業務軽減を勧められました。",
+            "background": "本人の健康状態と業務の適合性検討。安全配慮義務の観点から対応必要。"
+        },
+        {
+            "title": "労災申請の相談",
+            "consultation": "仕事中に怪我をしましたが、労災申請の方法がわかりません。",
+            "background": "労災認定の要件確認と適切な申請手続きの支援が必要。"
+        },
+        {
+            "title": "職場の安全対策不備",
+            "consultation": "作業場の安全設備が不十分で危険を感じます。改善を求めたいです。",
+            "background": "安全衛生法に基づく職場環境の点検と改善措置が必要。"
+        }
+    ],
+    "その他": [
+        {
+            "title": "副業申請の可否",
+            "consultation": "副業をしたいのですが、会社の許可が必要ですか?禁止されていますか?",
+            "background": "就業規則での副業規定と、許可制の運用実態を確認が必要。"
+        },
+        {
+            "title": "社内恋愛の報告義務",
+            "consultation": "同じ部署の同僚と交際しています。会社に報告する必要がありますか?",
+            "background": "社内恋愛に関する規定の有無と、利益相反の可能性を検討。"
+        },
+        {
+            "title": "SNSでの会社批判",
+            "consultation": "SNSで会社の不満を書いたら、懲戒処分にすると言われました。",
+            "background": "表現の自由と企業秩序維持のバランス。懲戒処分の相当性を検討。"
+        }
+    ]
+}
+
+# 相談者の態度の選択肢（全カテゴリー共通）
+ATTITUDE_OPTIONS = [
+    "非協力的だが、丁寧に説明すれば理解する",
+    "感情的になりやすいが、事実を示せば冷静に話せる",
+    "不安が強く、涙ぐむこともあるが、具体的な事実は話せる",
+    "権利主張が強いが、会社の事情も理解しようとする姿勢はある",
+    "警戒心が強く、法的権利を主張する傾向がある"
+]
+
+def get_category_titles(category):
+    """カテゴリーに基づいてタイトル選択肢を返す"""
+    if category in CATEGORY_SCENARIOS:
+        return [scenario['title'] for scenario in CATEGORY_SCENARIOS[category]]
+    return []
+
+def get_consultation_by_title(category, title):
+    """タイトルに基づいて相談内容の選択肢を返す（複数バリエーション）"""
+    if category in CATEGORY_SCENARIOS:
+        for scenario in CATEGORY_SCENARIOS[category]:
+            if scenario['title'] == title:
+                # 選択されたシナリオの相談内容を返す
+                return [scenario['consultation']]
+    return []
+
+def get_background_by_consultation(category, title):
+    """相談内容に基づいて背景の選択肢を返す"""
+    if category in CATEGORY_SCENARIOS:
+        for scenario in CATEGORY_SCENARIOS[category]:
+            if scenario['title'] == title:
+                # 選択されたシナリオの背景を返す
+                return [scenario['background']]
+    return []
+
+def get_attitudes():
+    """相談者の態度の選択肢を返す（固定5つ）"""
+    return ATTITUDE_OPTIONS
