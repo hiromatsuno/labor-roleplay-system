@@ -4,8 +4,7 @@
 """
 
 import streamlit as st
-import pyperclip
-from prompt_templates import PROMPT_TEMPLATES, generate_prompt
+from prompt_templates import PROMPT_TEMPLATES, generate_prompt, get_category_suggestions
 
 # ページ設定
 st.set_page_config(
@@ -141,16 +140,19 @@ with tab1:
         # プロンプトプレビュー
         st.markdown('<div class="prompt-preview">' + st.session_state.generated_prompt.replace('\n', '<br>') + '</div>', unsafe_allow_html=True)
         
-        # コピーボタン
+        # 文字数チェック
+        char_count = len(st.session_state.generated_prompt)
+        if char_count > 1000:
+            st.error(f"⚠️ プロンプトが{char_count}文字です。1,000文字を超えています。内容を短縮してください。")
+        else:
+            st.success(f"✅ プロンプト文字数: {char_count}/1,000文字")
+        
+        # コピーボタンとクリアボタン
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            if st.button("📋 クリップボードにコピー", use_container_width=True):
-                try:
-                    pyperclip.copy(st.session_state.generated_prompt)
-                    st.session_state.copy_success = True
-                    st.rerun()
-                except:
-                    st.warning("クリップボードへのコピーに失敗しました。下のテキストエリアから手動でコピーしてください。")
+            # Streamlitのネイティブコピー機能を使用
+            st.code(st.session_state.generated_prompt, language=None)
+            st.info("上のテキストを選択してコピーしてください(Ctrl+C / Cmd+C)")
         
         with col2:
             if st.button("🗑️ クリア", use_container_width=True):
@@ -158,41 +160,118 @@ with tab1:
                 st.session_state.generated_prompt = ""
                 st.session_state.copy_success = False
                 st.rerun()
-        
-        if st.session_state.copy_success:
-            st.success("✅ クリップボードにコピーしました!AIチャットに貼り付けて使用してください。")
-        
-        # テキストエリアでも表示(手動コピー用)
-        st.text_area("プロンプトテキスト(手動コピー用)", st.session_state.generated_prompt, height=200)
 
 # タブ2: カスタム作成
 with tab2:
     st.markdown("### オリジナルのシナリオを作成")
     st.markdown("独自の労務相談シナリオを作成できます。すべての項目を入力してプロンプトを生成してください。")
     
+    # カテゴリー選択（フォームの外で）
+    custom_category = st.selectbox(
+        "カテゴリーを選択してください（選択すると入力候補が表示されます）",
+        ["選択してください", "メンタルヘルス", "労働時間", "ハラスメント", "育児・介護", 
+         "退職・解雇", "賃金", "人事異動", "採用・試用期間", 
+         "職場環境", "休暇・休業", "安全衛生", "その他"],
+        key="category_selector"
+    )
+    
+    # カテゴリーに応じた提案を取得
+    if custom_category != "選択してください":
+        suggestions = get_category_suggestions(custom_category)
+        st.info(f"💡 {custom_category}カテゴリーの入力例が表示されます。参考にしてください。")
+    else:
+        suggestions = {
+            'titles': [],
+            'consultations': [],
+            'backgrounds': [],
+            'attitudes': []
+        }
+    
     with st.form("custom_prompt_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            custom_title = st.text_input("シナリオタイトル", placeholder="例: 突然の退職申し出への対応")
-            custom_category = st.selectbox("カテゴリー", ["メンタルヘルス", "労働時間", "ハラスメント", "育児・介護", 
-                                                         "退職・解雇", "賃金", "人事異動", "採用・試用期間", 
-                                                         "職場環境", "休暇・休業", "安全衛生", "その他"])
+            # タイトル入力（候補から選択または手入力）
+            if suggestions['titles']:
+                title_option = st.radio(
+                    "シナリオタイトル",
+                    ["候補から選択", "独自に入力"],
+                    horizontal=True
+                )
+                if title_option == "候補から選択":
+                    custom_title = st.selectbox("タイトルを選択", suggestions['titles'])
+                else:
+                    custom_title = st.text_input("タイトルを入力", placeholder="例: 突然の退職申し出への対応")
+            else:
+                custom_title = st.text_input("シナリオタイトル", placeholder="例: 突然の退職申し出への対応")
         
         with col2:
-            custom_attitude = st.text_input("相談者の態度", 
-                                           placeholder="例: 不安が強く、涙ぐむこともあるが、具体的な事実は話せる")
+            # 相談者の態度（候補から選択または手入力）
+            if suggestions['attitudes']:
+                attitude_option = st.radio(
+                    "相談者の態度",
+                    ["候補から選択", "独自に入力"],
+                    horizontal=True
+                )
+                if attitude_option == "候補から選択":
+                    custom_attitude = st.selectbox("態度を選択", suggestions['attitudes'])
+                else:
+                    custom_attitude = st.text_input("態度を入力", 
+                                                   placeholder="例: 不安が強く、涙ぐむこともあるが、具体的な事実は話せる")
+            else:
+                custom_attitude = st.text_input("相談者の態度", 
+                                               placeholder="例: 不安が強く、涙ぐむこともあるが、具体的な事実は話せる")
         
-        custom_consultation = st.text_area("相談内容", height=100,
-                                          placeholder="例: メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。")
+        # 相談内容（候補から選択または手入力）
+        if suggestions['consultations']:
+            consultation_option = st.radio(
+                "相談内容",
+                ["候補から選択", "独自に入力"],
+                horizontal=True
+            )
+            if consultation_option == "候補から選択":
+                custom_consultation = st.selectbox("相談内容を選択", suggestions['consultations'])
+            else:
+                custom_consultation = st.text_area("相談内容を入力", height=100,
+                                                  placeholder="例: メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。")
+        else:
+            custom_consultation = st.text_area("相談内容", height=100,
+                                              placeholder="例: メンタル不調で休職していたが復職したいです。主治医の診断書はもらっています。")
         
-        custom_background = st.text_area("背景情報", height=100,
-                                        placeholder="例: 二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。")
+        # 背景情報（候補から選択または手入力）
+        if suggestions['backgrounds']:
+            background_option = st.radio(
+                "背景情報",
+                ["候補から選択", "独自に入力"],
+                horizontal=True
+            )
+            if background_option == "候補から選択":
+                custom_background = st.selectbox("背景を選択", suggestions['backgrounds'])
+            else:
+                custom_background = st.text_area("背景情報を入力", height=100,
+                                                placeholder="例: 二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。")
+        else:
+            custom_background = st.text_area("背景情報", height=100,
+                                            placeholder="例: 二度目のメンタル不調休職のため、会社としてどうしてよいか悩んでいる。")
         
         submit_button = st.form_submit_button("プロンプトを生成", use_container_width=True)
         
         if submit_button:
-            if all([custom_consultation, custom_background, custom_attitude]):
+            # バリデーション
+            errors = []
+            if custom_category == "選択してください":
+                errors.append("カテゴリーを選択してください。")
+            if not custom_consultation:
+                errors.append("相談内容を入力してください。")
+            if not custom_background:
+                errors.append("背景情報を入力してください。")
+            if not custom_attitude:
+                errors.append("相談者の態度を入力してください。")
+            
+            if errors:
+                for error in errors:
+                    st.error(error)
+            else:
                 custom_template = {
                     'title': custom_title or "カスタムシナリオ",
                     'category': custom_category,
@@ -203,27 +282,35 @@ with tab2:
                 st.session_state.selected_template = custom_template
                 st.session_state.generated_prompt = generate_prompt(custom_template)
                 st.session_state.copy_success = False
-                st.success("✅ プロンプトを生成しました!下にスクロールして確認してください。")
-            else:
-                st.error("すべての必須項目を入力してください。")
+                
+                # 生成されたプロンプトの文字数チェック
+                prompt_char_count = len(st.session_state.generated_prompt)
+                if prompt_char_count > 1000:
+                    st.warning(f"⚠️ 生成されたプロンプトが{prompt_char_count}文字です。1,000文字を超えていますが、生成しました。下で確認してください。")
+                else:
+                    st.success("✅ プロンプトを生成しました!下にスクロールして確認してください。")
     
     # カスタムプロンプトの表示
     if st.session_state.generated_prompt and st.session_state.selected_template:
-        if st.session_state.selected_template.get('title') == custom_title or custom_title == "":
+        if st.session_state.selected_template.get('category') == custom_category or \
+           (custom_category == "選択してください" and 'category' in st.session_state.selected_template):
             st.markdown("---")
             st.markdown("### 📝 生成されたプロンプト")
+            
+            # 文字数チェック
+            char_count = len(st.session_state.generated_prompt)
+            if char_count > 1000:
+                st.error(f"⚠️ プロンプトが{char_count}文字です。1,000文字を超えています。内容を短縮してください。")
+            else:
+                st.success(f"✅ プロンプト文字数: {char_count}/1,000文字")
             
             st.markdown('<div class="prompt-preview">' + st.session_state.generated_prompt.replace('\n', '<br>') + '</div>', unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("📋 クリップボードにコピー", key="copy_custom", use_container_width=True):
-                    try:
-                        pyperclip.copy(st.session_state.generated_prompt)
-                        st.session_state.copy_success = True
-                        st.rerun()
-                    except:
-                        st.warning("クリップボードへのコピーに失敗しました。下のテキストエリアから手動でコピーしてください。")
+                # Streamlitのネイティブコピー機能を使用
+                st.code(st.session_state.generated_prompt, language=None)
+                st.info("上のテキストを選択してコピーしてください(Ctrl+C / Cmd+C)")
             
             with col2:
                 if st.button("🗑️ クリア", key="clear_custom", use_container_width=True):
@@ -231,11 +318,6 @@ with tab2:
                     st.session_state.generated_prompt = ""
                     st.session_state.copy_success = False
                     st.rerun()
-            
-            if st.session_state.copy_success:
-                st.success("✅ クリップボードにコピーしました!AIチャットに貼り付けて使用してください。")
-            
-            st.text_area("プロンプトテキスト(手動コピー用)", st.session_state.generated_prompt, height=200, key="custom_text_area")
 
 # タブ3: 使い方
 with tab3:
