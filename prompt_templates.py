@@ -122,3 +122,26 @@ def generate_prompt(template_data):
         background=template_data['background'],
         attitude=template_data['attitude']
     )
+
+def get_category_suggestions(category):
+    """カテゴリーに基づいて入力候補を返す"""
+    # 該当カテゴリーのテンプレートを抽出
+    category_templates = [t for t in PROMPT_TEMPLATES if t['category'] == category]
+    
+    if not category_templates:
+        return {
+            'titles': [],
+            'consultations': [],
+            'backgrounds': [],
+            'attitudes': []
+        }
+    
+    # 各項目の候補をリストアップ
+    suggestions = {
+        'titles': [t['title'] for t in category_templates],
+        'consultations': [t['consultation'] for t in category_templates],
+        'backgrounds': [t['background'] for t in category_templates],
+        'attitudes': list(set([t['attitude'] for t in category_templates]))  # 重複を除去
+    }
+    
+    return suggestions
